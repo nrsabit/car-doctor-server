@@ -2,6 +2,7 @@ const express = require('express')
 const cors = require('cors')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
+const jwt = require('jsonwebtoken')
 const app = express()
 const port = process.env.PORT || 5000
 
@@ -23,6 +24,22 @@ const client = new MongoClient(uri, {
     }
 });
 
+// jwt verification before calling the api
+const verifyJWT = (req, res, next) => {
+    const authorization = req.headers.authorization
+    if(!authorization){
+        return res.status(401).send({error: true, message: "unauthorized access"})
+    }
+    const token = authorization.split(' ')[1]
+    jwt.verify(token, process.env.JWT_SECRET, (error, decoded) => {
+        if(error){
+            return res.status(401).send({error: true, message: "unauthorized access"})
+        }
+        req.decoded = decoded
+        next()
+    })
+}
+
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
@@ -31,49 +48,57 @@ async function run() {
         const servicesCollection = client.db('carDoctor').collection('services')
         const bookedServices = client.db('carDoctor').collection('booked')
 
-        app.get('/services', async(req, res) => {
+        // jwt token related calls
+        app.post('/jwt', (req, res) => {
+            const user = req.body
+            const token = jwt.sign(user, process.env.JWT_SECRET, {expiresIn: '1h'})
+            res.send({token})
+        })
+
+        // services related api calls
+        app.get('/services', async (req, res) => {
             const result = await servicesCollection.find().toArray();
             res.send(result)
         })
 
-        app.get('/services/:id', async(req, res) => {
+        app.get('/services/:id', async (req, res) => {
             const id = req.params.id;
-            const query = {_id: new ObjectId(id)}
+            const query = { _id: new ObjectId(id) }
             const result = await servicesCollection.findOne(query)
             res.send(result)
         })
 
         // This is the booked services collections. 
-        app.post('/checkout', async(req, res) => {
+        app.post('/checkout', async (req, res) => {
             const newService = req.body
             const result = await bookedServices.insertOne(newService)
             res.send(result)
         })
 
-        app.get('/bookings', async(req, res) => {
+        app.get('/bookings', verifyJWT, async (req, res) => {
             const email = req.query.email
             let query = {}
-            email ? query = {email : email} : query = {}
+            email ? query = { email: email } : query = {}
             const result = await bookedServices.find(query).toArray();
             res.send(result)
         })
 
-        app.patch('/bookings/:id', async(req, res) => {
+        app.patch('/bookings/:id', async (req, res) => {
             const id = req.params.id;
             const status = req.body
-            const filter = {_id: new ObjectId(id)}
+            const filter = { _id: new ObjectId(id) }
             const updateService = {
                 $set: {
-                  status: status.status
+                    status: status.status
                 }
-              };
+            };
             const result = await bookedServices.updateOne(filter, updateService)
             res.send(result)
         })
 
-        app.delete('/bookings/:id', async(req, res) => {
+        app.delete('/bookings/:id', async (req, res) => {
             const id = req.params.id
-            const query = {_id: new ObjectId(id)}
+            const query = { _id: new ObjectId(id) }
             const result = await bookedServices.deleteOne(query)
             res.send(result)
         })
