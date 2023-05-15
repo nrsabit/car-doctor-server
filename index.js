@@ -27,16 +27,17 @@ const client = new MongoClient(uri, {
 // jwt verification before calling the api
 const verifyJWT = (req, res, next) => {
     const authorization = req.headers.authorization
-    if(!authorization){
-        return res.status(401).send({error: true, message: "unauthorized access"})
-    }
     const token = authorization.split(' ')[1]
+    if (!token) {
+        return res.status(401).send({ error: true, message: "unauthorized access" })
+    }
     jwt.verify(token, process.env.JWT_SECRET, (error, decoded) => {
-        if(error){
-            return res.status(401).send({error: true, message: "unauthorized access"})
+        if (error) {
+            return res.status(402).send({ error: true, message: "unauthorized access" })
+        } else {
+            req.decoded = decoded
+            next()
         }
-        req.decoded = decoded
-        next()
     })
 }
 
@@ -51,8 +52,9 @@ async function run() {
         // jwt token related calls
         app.post('/jwt', (req, res) => {
             const user = req.body
-            const token = jwt.sign(user, process.env.JWT_SECRET, {expiresIn: '1h'})
-            res.send({token})
+            console.log(user)
+            const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '1h' })
+            res.send({ token })
         })
 
         // services related api calls
@@ -77,6 +79,9 @@ async function run() {
 
         app.get('/bookings', verifyJWT, async (req, res) => {
             const email = req.query.email
+            if(email !== req.decoded.email){
+                return res.status(403).send({error: true, message: "access denied"})
+            }
             let query = {}
             email ? query = { email: email } : query = {}
             const result = await bookedServices.find(query).toArray();
